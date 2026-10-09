@@ -23,6 +23,9 @@ class MainActivity : FlutterActivity() {
     private var registered = false
     private var ch: MethodChannel? = null
     private val ex = Executors.newSingleThreadExecutor()
+    private val sender = Executors.newSingleThreadExecutor()
+    private val pending = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile private var lastMask = 0
     private val ui = Handler(Looper.getMainLooper())
     private val adapter get() = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
@@ -49,7 +52,7 @@ class MainActivity : FlutterActivity() {
         }
         override fun onConnectionStateChanged(d: BluetoothDevice, s: Int) {
             when (s) {
-                BluetoothProfile.STATE_CONNECTED -> { host = d; last = d; tries = 0; notify(2) }
+                BluetoothProfile.STATE_CONNECTED -> { lastMask = 0; host = d; last = d; tries = 0; notify(2) }
                 BluetoothProfile.STATE_CONNECTING -> notify(1)
                 else -> {
                     if (host == d || host == null) host = null
@@ -89,8 +92,19 @@ class MainActivity : FlutterActivity() {
                 "send" -> {
                     val a = c.arguments as List<*>
                     val h = host
-                    if (h != null) hid?.sendReport(h, 0, byteArrayOf(
-                        (a[0] as Int).toByte(), (a[1] as Int).toByte(), (a[2] as Int).toByte(), (a[3] as Int).toByte()))
+                    val m = a[0] as Int
+                    if (h != null && hid != null) {
+                        val moveOnly = m == lastMask
+                        lastMask = m
+                        // tugma o'zgarishi har doim yuboriladi; harakat navbat to'lsa tashlab yuboriladi
+                        if (!moveOnly || pending.get() < 6) {
+                            val rep = byteArrayOf(m.toByte(), (a[1] as Int).toByte(), (a[2] as Int).toByte(), (a[3] as Int).toByte())
+                            pending.incrementAndGet()
+                            sender.execute {
+                                try { hid?.sendReport(h, 0, rep) } catch (_: Exception) {} finally { pending.decrementAndGet() }
+                            }
+                        }
+                    }
                     r.success(null)
                 }
                 else -> r.notImplemented()

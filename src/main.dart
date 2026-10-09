@@ -73,6 +73,7 @@ class _S extends State<MouseApp> {
 
   @override
   void dispose() {
+    _tm?.cancel();
     _sa?.cancel();
     _sg?.cancel();
     super.dispose();
@@ -83,6 +84,7 @@ class _S extends State<MouseApp> {
   @override
   void initState() {
     super.initState();
+    _tm = Timer.periodic(const Duration(milliseconds: 16), (_) => _flush());
     for (final p in _pl.values) {
       p.setPlayerMode(PlayerMode.lowLatency);
     }
@@ -127,6 +129,19 @@ class _S extends State<MouseApp> {
 
   void send(int dx, int dy, int w) => ch.invokeMethod('send', [mask, dx, dy, w]);
 
+  // Harakat va g'ildirak yig'ilib, soniyasiga ~60 marta yuboriladi (Bluetooth to'lib qolmasligi uchun)
+  int px = 0, py = 0, pw = 0;
+  Timer? _tm;
+
+  void _flush() {
+    if (px == 0 && py == 0 && pw == 0) return;
+    final x = px.clamp(-127, 127), y = py.clamp(-127, 127), w = pw.clamp(-127, 127);
+    px -= x;
+    py -= y;
+    pw -= w;
+    send(x, y, w);
+  }
+
   void move(Offset d) => moveRaw(d.dx * sens, d.dy * sens);
 
   void moveRaw(double dx, double dy) {
@@ -135,7 +150,8 @@ class _S extends State<MouseApp> {
     final x = ax.truncate(), y = ay.truncate();
     ax -= x;
     ay -= y;
-    if (x != 0 || y != 0) send(x.clamp(-127, 127), y.clamp(-127, 127), 0);
+    px = (px + x).clamp(-600, 600);
+    py = (py + y).clamp(-600, 600);
   }
 
   void btn(int bit, bool down) {
@@ -155,7 +171,7 @@ class _S extends State<MouseApp> {
     wacc += dy;
     while (wacc.abs() >= 10) {
       final s = wacc > 0 ? -1 : 1;
-      send(0, 0, s);
+      pw = (pw + s).clamp(-20, 20);
       wacc -= wacc > 0 ? 10 : -10;
       if (sound) play('tick.wav');
       HapticFeedback.selectionClick();
@@ -252,7 +268,7 @@ class _S extends State<MouseApp> {
             child: Row(children: [
               Icon(Icons.circle, size: 12, color: connected ? Colors.greenAccent : (connecting ? Colors.amber : Colors.redAccent)),
               const SizedBox(width: 8),
-              Expanded(child: Text(connected ? 'Ulangan' : (connecting ? 'Ulanmoqda...' : 'Ulanmagan'), style: TextStyle(color: k.text))),
+              Expanded(child: Text(connected ? 'Ulangan' : (connecting ? 'Ulanmoqda' : 'Ulanmagan'), maxLines: 1, softWrap: false, overflow: TextOverflow.ellipsis, style: TextStyle(color: k.text, fontSize: 13))),
               for (int i = 0; i < skins.length; i++)
                 GestureDetector(
                   onTap: () {
@@ -260,8 +276,8 @@ class _S extends State<MouseApp> {
                     _save();
                   },
                   child: Container(
-                    width: 26, height: 26,
-                    margin: const EdgeInsets.only(left: 8),
+                    width: 24, height: 24,
+                    margin: const EdgeInsets.only(left: 6),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(colors: [skins[i].top, skins[i].accent]),
@@ -271,28 +287,28 @@ class _S extends State<MouseApp> {
                 ),
               if (gyroOk)
                 IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
-                  tooltip: 'Giroskop',
+                  style: IconButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(36, 36), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+tooltip: 'Giroskop',
                   icon: Icon(Icons.screen_rotation, color: gyroOn ? k.accent : k.text.withOpacity(.4)),
                   onPressed: () {
                     setState(() => _setGyro(!gyroOn));
                     _save();
                   },
                 ),
-              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 38, minHeight: 38), 
-                icon: Icon(sound ? Icons.volume_up : Icons.volume_off, color: k.accent),
+              IconButton(style: IconButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(36, 36), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+icon: Icon(sound ? Icons.volume_up : Icons.volume_off, color: k.accent),
                 onPressed: () {
                   setState(() => sound = !sound);
                   _save();
                 },
               ),
-              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 38, minHeight: 38), 
-                tooltip: "Telefonni ko'rinadigan qilish",
+              IconButton(style: IconButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(36, 36), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+tooltip: "Telefonni ko'rinadigan qilish",
                 icon: Icon(Icons.visibility, color: k.accent),
                 onPressed: () => ch.invokeMethod('discoverable'),
               ),
-              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 38, minHeight: 38), icon: Icon(Icons.bluetooth, color: k.accent), onPressed: pick),
+              IconButton(style: IconButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(36, 36), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+icon: Icon(Icons.bluetooth, color: k.accent), onPressed: pick),
             ]),
           ),
           Row(children: [
