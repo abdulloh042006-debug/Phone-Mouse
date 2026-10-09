@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const ch = MethodChannel('mouse');
@@ -35,6 +39,44 @@ class _S extends State<MouseApp> {
   bool connected = false, connecting = false, sound = true;
   double sens = 1.8, ax = 0, ay = 0, wacc = 0;
   Skin get k => skins[skin];
+  bool gyroOn = false, gyroOk = true, held = false;
+  double gsens = 1.0, gx = 0, gy = 0, gz = 9.8, _last = 0;
+  final _sw = Stopwatch()..start();
+  StreamSubscription? _sa, _sg;
+
+  void _setGyro(bool on) {
+    gyroOn = on;
+    _sa?.cancel();
+    _sg?.cancel();
+    if (!on) return;
+    void bad(Object _) {
+      if (mounted) setState(() { gyroOk = false; gyroOn = false; });
+    }
+    _sa = accelerometerEventStream(samplingPeriod: SensorInterval.gameInterval)
+        .listen((e) { gx = e.x; gy = e.y; gz = e.z; }, onError: bad);
+    _sg = gyroscopeEventStream(samplingPeriod: SensorInterval.gameInterval).listen(_gyro, onError: bad);
+  }
+
+  void _gyro(GyroscopeEvent e) {
+    final now = _sw.elapsedMicroseconds / 1e6;
+    final dt = (now - _last).clamp(0.0, 0.05);
+    _last = now;
+    if (!held) return;
+    final n = sqrt(gx * gx + gy * gy + gz * gz);
+    if (n < 1) return;
+    final yaw = (e.x * gx + e.y * gy + e.z * gz) / n; // aylanish: gorizont
+    double dx = -yaw, dy = -e.x;                      // egilish: vertikal
+    if (dx.abs() < .03) dx = 0;
+    if (dy.abs() < .03) dy = 0;
+    moveRaw(dx * dt * gsens * 700, dy * dt * gsens * 700);
+  }
+
+  @override
+  void dispose() {
+    _sa?.cancel();
+    _sg?.cancel();
+    super.dispose();
+  }
   final _pl = {for (final n in ['down.wav', 'up.wav', 'tick.wav']) n: AudioPlayer()};
   void play(String n) => _pl[n]!.play(AssetSource(n), volume: 1);
 
@@ -45,6 +87,10 @@ class _S extends State<MouseApp> {
       p.setPlayerMode(PlayerMode.lowLatency);
     }
     ch.setMethodCallHandler((c) async {
+      if (c.method == 'key') {
+        final a = c.arguments as List;
+        btn(a[0] as int, a[1] as bool);
+      }
       if (c.method == 'state' && mounted) {
         final st = c.arguments as int;
         setState(() {
@@ -63,6 +109,7 @@ class _S extends State<MouseApp> {
     setState(() {
       sound = p.getBool('sound') ?? true;
       skin = (p.getInt('skin') ?? 0).clamp(0, skins.length - 1);
+      _setGyro(p.getBool('gyro') ?? false);
     });
   }
 
@@ -70,6 +117,7 @@ class _S extends State<MouseApp> {
     final p = await SharedPreferences.getInstance();
     await p.setBool('sound', sound);
     await p.setInt('skin', skin);
+    await p.setBool('gyro', gyroOn);
   }
 
   Future<void> _init() async {
@@ -79,9 +127,11 @@ class _S extends State<MouseApp> {
 
   void send(int dx, int dy, int w) => ch.invokeMethod('send', [mask, dx, dy, w]);
 
-  void move(Offset d) {
-    ax += d.dx * sens;
-    ay += d.dy * sens;
+  void move(Offset d) => moveRaw(d.dx * sens, d.dy * sens);
+
+  void moveRaw(double dx, double dy) {
+    ax += dx;
+    ay += dy;
     final x = ax.truncate(), y = ay.truncate();
     ax -= x;
     ay -= y;
@@ -202,8 +252,7 @@ class _S extends State<MouseApp> {
             child: Row(children: [
               Icon(Icons.circle, size: 12, color: connected ? Colors.greenAccent : (connecting ? Colors.amber : Colors.redAccent)),
               const SizedBox(width: 8),
-              Text(connected ? 'Ulangan' : (connecting ? 'Ulanmoqda...' : 'Ulanmagan'), style: TextStyle(color: k.text)),
-              const Spacer(),
+              Expanded(child: Text(connected ? 'Ulangan' : (connecting ? 'Ulanmoqda...' : 'Ulanmagan'), style: TextStyle(color: k.text))),
               for (int i = 0; i < skins.length; i++)
                 GestureDetector(
                   onTap: () {
@@ -220,19 +269,30 @@ class _S extends State<MouseApp> {
                     ),
                   ),
                 ),
-              IconButton(
+              if (gyroOk)
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+                  tooltip: 'Giroskop',
+                  icon: Icon(Icons.screen_rotation, color: gyroOn ? k.accent : k.text.withOpacity(.4)),
+                  onPressed: () {
+                    setState(() => _setGyro(!gyroOn));
+                    _save();
+                  },
+                ),
+              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 38, minHeight: 38), 
                 icon: Icon(sound ? Icons.volume_up : Icons.volume_off, color: k.accent),
                 onPressed: () {
                   setState(() => sound = !sound);
                   _save();
                 },
               ),
-              IconButton(
+              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 38, minHeight: 38), 
                 tooltip: "Telefonni ko'rinadigan qilish",
                 icon: Icon(Icons.visibility, color: k.accent),
                 onPressed: () => ch.invokeMethod('discoverable'),
               ),
-              IconButton(icon: Icon(Icons.bluetooth, color: k.accent), onPressed: pick),
+              IconButton(padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 38, minHeight: 38), icon: Icon(Icons.bluetooth, color: k.accent), onPressed: pick),
             ]),
           ),
           Row(children: [
@@ -240,6 +300,12 @@ class _S extends State<MouseApp> {
             Icon(Icons.speed, size: 18, color: k.text),
             Expanded(child: Slider(value: sens, min: .6, max: 4, activeColor: k.accent, onChanged: (v) => setState(() => sens = v))),
           ]),
+          if (gyroOn)
+            Row(children: [
+              const SizedBox(width: 16),
+              Icon(Icons.screen_rotation, size: 18, color: k.text),
+              Expanded(child: Slider(value: gsens, min: .3, max: 3, activeColor: k.accent, onChanged: (v) => setState(() => gsens = v))),
+            ]),
           Expanded(
             child: Container(
               margin: const EdgeInsets.fromLTRB(10, 0, 10, 12),
@@ -253,6 +319,9 @@ class _S extends State<MouseApp> {
                 Expanded(
                   flex: 6,
                   child: GestureDetector(
+                    onPanDown: (_) => held = true,
+                    onPanEnd: (_) => held = false,
+                    onPanCancel: () => held = false,
                     onPanUpdate: (d) => move(d.delta),
                     onTap: tap,
                     child: Container(

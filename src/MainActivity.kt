@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -26,8 +27,8 @@ class MainActivity : FlutterActivity() {
     private val adapter get() = (getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
     private val desc = intArrayOf(
-        0x05,0x01,0x09,0x02,0xA1,0x01,0x09,0x01,0xA1,0x00,0x05,0x09,0x19,0x01,0x29,0x03,
-        0x15,0x00,0x25,0x01,0x95,0x03,0x75,0x01,0x81,0x02,0x95,0x01,0x75,0x05,0x81,0x03,
+        0x05,0x01,0x09,0x02,0xA1,0x01,0x09,0x01,0xA1,0x00,0x05,0x09,0x19,0x01,0x29,0x05,
+        0x15,0x00,0x25,0x01,0x95,0x05,0x75,0x01,0x81,0x02,0x95,0x01,0x75,0x03,0x81,0x03,
         0x05,0x01,0x09,0x30,0x09,0x31,0x09,0x38,0x15,0x81,0x25,0x7F,0x75,0x08,0x95,0x03,
         0x81,0x06,0xC0,0xC0
     ).map { it.toByte() }.toByteArray()
@@ -106,6 +107,18 @@ class MainActivity : FlutterActivity() {
             }
             override fun onServiceDisconnected(p: Int) { hid = null; registered = false }
         }, BluetoothProfile.HID_DEVICE)
+    }
+
+    // Telefon ovoz tugmalari = mishkaning yon tugmalari (Orqaga / Oldinga)
+    override fun dispatchKeyEvent(ev: KeyEvent): Boolean {
+        val bit = when (ev.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_DOWN -> 8   // Orqaga
+            KeyEvent.KEYCODE_VOLUME_UP -> 16    // Oldinga
+            else -> 0
+        }
+        if (bit == 0 || host == null) return super.dispatchKeyEvent(ev)
+        if (ev.repeatCount == 0) ch?.invokeMethod("key", listOf(bit, ev.action == KeyEvent.ACTION_DOWN))
+        return true
     }
 
     override fun onDestroy() {
