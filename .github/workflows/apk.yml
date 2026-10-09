@@ -1,4 +1,4 @@
-name: Android APK
+name: apk
 on: [push, workflow_dispatch]
 jobs:
   build:
@@ -6,14 +6,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+        with: { distribution: temurin, java-version: 17 }
       - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: bash setup.sh && flutter build apk --release
+        with: { channel: stable }
+      - run: bash setup.sh && flutter build apk --release --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v4
-        with:
-          name: PhoneMouse-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+        with: { name: PhoneMouse-apk, path: build/app/outputs/flutter-apk/app-release.apk }

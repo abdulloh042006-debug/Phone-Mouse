@@ -1,3 +1,4 @@
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -34,10 +35,15 @@ class _S extends State<MouseApp> {
   bool connected = false, connecting = false, sound = true;
   double sens = 1.8, ax = 0, ay = 0, wacc = 0;
   Skin get k => skins[skin];
+  final _pl = {for (final n in ['down.wav', 'up.wav', 'tick.wav']) n: AudioPlayer()};
+  void play(String n) => _pl[n]!.play(AssetSource(n), volume: 1);
 
   @override
   void initState() {
     super.initState();
+    for (final p in _pl.values) {
+      p.setPlayerMode(PlayerMode.lowLatency);
+    }
     ch.setMethodCallHandler((c) async {
       if (c.method == 'state' && mounted) {
         final st = c.arguments as int;
@@ -85,7 +91,7 @@ class _S extends State<MouseApp> {
   void btn(int bit, bool down) {
     mask = down ? mask | bit : mask & ~bit;
     HapticFeedback.selectionClick();
-    if (down && sound) SystemSound.play(SystemSoundType.click);
+    if (sound) play(down ? 'down.wav' : 'up.wav');
     send(0, 0, 0);
   }
 
@@ -101,6 +107,7 @@ class _S extends State<MouseApp> {
       final s = wacc > 0 ? -1 : 1;
       send(0, 0, s);
       wacc -= wacc > 0 ? 10 : -10;
+      if (sound) play('tick.wav');
       HapticFeedback.selectionClick();
     }
   }
